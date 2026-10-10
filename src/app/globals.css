@@ -1,26 +1,129 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Family Love Food
+  Paleta: negre, beix (paper kraft) i marró xocolata, amb contrast alt.
+  Tipografia: Bricolage Grotesque per a títols, Atkinson Hyperlegible per al text
+  (dissenyada per llegir-se bé, que és el que volem en una app de cada dia).
+*/
+
+@theme {
+  --color-paper: #e8dbc4;
+  --color-card: #f7f0e4;
+  --color-ink: #000000;
+  --color-brown: #5b3416;
+  --color-brown-deep: #3a200c;
+  --color-tan: #b98a5c;
+  --color-line: #cbb48c;
+  --color-danger: #9c2316;
+
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--color-ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  min-height: 100dvh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-brown);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Controls compartits */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0 1.1rem;
+    border-radius: 10px;
+    font-weight: 700;
+    border: 2px solid transparent;
+    transition: background-color 120ms, color 120ms;
+    cursor: pointer;
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--color-brown);
+    color: var(--color-card);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-brown-deep);
+  }
+  .btn-outline {
+    background: transparent;
+    color: var(--color-ink);
+    border-color: var(--color-ink);
+  }
+  .btn-outline:hover:not(:disabled) {
+    background: var(--color-ink);
+    color: var(--color-card);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-brown);
+    padding: 0 0.6rem;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-brown) 10%, transparent);
+  }
+
+  .field {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.55rem 0.8rem;
+    border-radius: 10px;
+    border: 2px solid var(--color-line);
+    background: var(--color-card);
+    color: var(--color-ink);
+    font-size: 1rem;
+  }
+  .field:focus {
+    border-color: var(--color-ink);
+    outline: none;
+  }
+  .label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+  }
+
+  .panel {
+    background: var(--color-card);
+    border: 2px solid var(--color-ink);
+    border-radius: 16px;
+  }
 }

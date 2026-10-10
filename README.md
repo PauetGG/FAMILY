@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Family Love Food
 
-## Getting Started
+Dieta en calendari, llista de la compra i repartiment de tiquets per a casa compartida.
+Next.js + Supabase, preparada per instal·lar-se a l'iPhone com una app (PWA).
 
-First, run the development server:
+## Què hi ha fet
+
+- Entrar i crear compte (correu i contrasenya).
+- **Calendari**: un dia cada vegada al mòbil i a l'iPad vertical; tota la setmana a l'iPad horitzontal i a l'ordinador. Afegir i treure plats, racions, copiar la setmana a la següent i veure el calendari d'algú que te l'ha compartit.
+- **Plats**: crear, editar i esborrar plats amb els ingredients per ració. Els plats de la resta del grup es veuen però només els edita qui els ha creat.
+- **Grup**: crear un grup, entrar amb codi, sortir-ne, triar qui veu o edita el teu calendari i canviar el teu nom.
+- **Compra** i **Tiquets**: pantalles preparades, són les següents que es construeixen.
+
+## Posar-la en marxa al teu ordinador
+
+Necessites Node.js 20 o més nou.
 
 ```bash
+npm install
+cp .env.example .env.local   # i hi poses la Project URL i la clau anon de Supabase
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Obre http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Publicar-la
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Es pot publicar a Vercel o a Netlify connectant el repositori. Cal afegir les mateixes dues variables
+(`NEXT_PUBLIC_SUPABASE_URL` i `NEXT_PUBLIC_SUPABASE_ANON_KEY`) a la configuració del servei.
 
-## Learn More
+A Supabase, a **Authentication > URL Configuration**, posa l'adreça publicada com a *Site URL*.
 
-To learn more about Next.js, take a look at the following resources:
+## Instal·lar-la a l'iPhone
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Obre l'adreça a Safari, prem el botó de compartir i tria **Afegeix a la pantalla d'inici**.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Estructura
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  proxy.ts                 protecció de rutes i sessió de Supabase
+  app/login/               entrar i crear compte
+  app/(app)/page.tsx       calendari
+  app/(app)/plats/         plats i ingredients
+  app/(app)/grup/          grups i compartir calendari
+  app/(app)/compra/        (properament)
+  app/(app)/tiquets/       (properament)
+  components/              menú, finestres, capçaleres
+  lib/                     client de Supabase, tipus i dates
+public/sw.js               service worker
+supabase/schema.sql        esquema de la base de dades
+```
