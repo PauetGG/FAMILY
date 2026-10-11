@@ -44,7 +44,28 @@ export type DietEntry = {
   } | null;
 };
 
-// Persona que surt al calendari: tu i qui t'ha compartit el seu
+// Persona que surt al calendari: tu i la gent dels teus grups (canEdit si t'ha donat permís)
 export type CalendarPerson = { id: string; name: string; canEdit: boolean };
 
 export type Group = { id: string; name: string; invite_code: string; created_by: string };
+
+// Part d'un grup, per exemple una parella dins del pis
+export type Subgroup = { id: string; group_id: string; name: string; subgroup_members: { user_id: string }[] };
+
+// Consum fix: el que es menja igual cada dia i no va al calendari (per exemple, el gos)
+export type RecurringItem = {
+  id: string;
+  meal: Meal | null;
+  ingredient_id: string;
+  quantity: number;
+  position: number;
+  ingredients: Ingredient | null;
+};
+
+export type RecurringPlan = {
+  id: string;
+  group_id: string;
+  subgroup_id: string | null;
+  name: string;
+  recurring_items: RecurringItem[];
+};

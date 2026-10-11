@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Family Love Food",
+    name: "Family Loves Food",
     short_name: "FLF",
     description: "Dieta, compra i tiquets compartits de casa",
     start_url: "/",

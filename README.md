@@ -1,4 +1,4 @@
-# Family Love Food
+# Family Loves Food
 
 Dieta en calendari, llista de la compra i repartiment de tiquets per a casa compartida.
 Next.js + Supabase, preparada per instal·lar-se a l'iPhone com una app (PWA).

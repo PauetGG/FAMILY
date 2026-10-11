@@ -1,8 +1,13 @@
 // Proposa qui paga una línia del tiquet a partir dels articles de la llista amb què
 // s'ha relacionat. Si l'arròs era 480 g per a tu i 400 g per a la Laia, el paquet
-// es reparteix en aquesta proporció. El que és comú es reparteix entre tot el grup.
+// es reparteix en aquesta proporció. El que és d'un subgrup (el pinso del gos) es reparteix
+// entre la gent del subgrup, i el que és comú, entre tot el grup.
 
-export type ItemPart = { for_user_id: string | null; quantity: number | null };
+export type ItemPart = {
+  for_user_id: string | null;
+  quantity: number | null;
+  subgroup_members?: string[] | null;
+};
 
 export function proposePayers(parts: ItemPart[], members: string[]): Map<string, number> {
   const weights = new Map<string, number>();
@@ -12,8 +17,11 @@ export function proposePayers(parts: ItemPart[], members: string[]): Map<string,
 
   for (const p of parts) {
     const w = useQty ? Number(p.quantity) : 1;
+    const sub = (p.subgroup_members ?? []).filter((m) => members.includes(m));
     if (p.for_user_id) {
       weights.set(p.for_user_id, (weights.get(p.for_user_id) ?? 0) + w);
+    } else if (sub.length) {
+      for (const m of sub) weights.set(m, (weights.get(m) ?? 0) + w / sub.length);
     } else {
       for (const m of members) weights.set(m, (weights.get(m) ?? 0) + w / members.length);
     }

@@ -14,6 +14,7 @@ type ListItem = {
   quantity: number | null;
   unit: string | null;
   for_user_id: string | null;
+  for_subgroup_id: string | null;
   ingredients: { name: string } | null;
 };
 
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
 
   const { data: receipt } = await sb
     .from("receipts")
-    .select("id, group_id, shopping_list_id, image_path")
+    .select("id, group_id, shopping_list_id, image_path, shopping_lists(subgroup_id)")
     .eq("id", receiptId)
     .maybeSingle();
   if (!receipt) return errorJson("No trobem aquest tiquet.", 404);
@@ -94,6 +95,14 @@ export async function POST(request: Request) {
   if (receipt.group_id) {
     const { data: gm } = await sb.from("group_members").select("user_id").eq("group_id", receipt.group_id);
     members = (gm ?? []).map((m: { user_id: string }) => m.user_id);
+    // Si la llista és d'un subgrup, el que és comú es reparteix només entre ells
+    const subgroupId = (receipt.shopping_lists as unknown as { subgroup_id: string | null } | null)?.subgroup_id;
+    if (subgroupId) {
+      const { data: sm } = await sb.from("subgroup_members").select("user_id").eq("subgroup_id", subgroupId);
+      const ids = new Set((sm ?? []).map((m: { user_id: string }) => m.user_id));
+      const inSubgroup = members.filter((m) => ids.has(m));
+      if (inSubgroup.length) members = inSubgroup;
+    }
   }
 
   // Productes de la llista de la compra, agrupats igual que a la pantalla de la llista
@@ -101,8 +110,19 @@ export async function POST(request: Request) {
   if (receipt.shopping_list_id) {
     const { data: items } = await sb
       .from("shopping_list_items")
-      .select("id, ingredient_id, custom_name, quantity, unit, for_user_id, ingredients(name)")
+      .select("id, ingredient_id, custom_name, quantity, unit, for_user_id, for_subgroup_id, ingredients(name)")
       .eq("list_id", receipt.shopping_list_id);
+    // Gent de cada subgrup, per repartir el que és d'un subgrup (el menjar del gos)
+    const subIds = [
+      ...new Set(((items ?? []) as unknown as ListItem[]).map((i) => i.for_subgroup_id).filter(Boolean)),
+    ] as string[];
+    const subMembers = new Map<string, string[]>();
+    if (subIds.length) {
+      const { data: sm } = await sb.from("subgroup_members").select("subgroup_id, user_id").in("subgroup_id", subIds);
+      for (const m of (sm ?? []) as { subgroup_id: string; user_id: string }[]) {
+        subMembers.set(m.subgroup_id, [...(subMembers.get(m.subgroup_id) ?? []), m.user_id]);
+      }
+    }
     const byKey = new Map<string, Product>();
     for (const i of (items ?? []) as unknown as ListItem[]) {
       const k = itemKey(i);
@@ -113,7 +133,11 @@ export async function POST(request: Request) {
         parts: [],
       };
       p.ids.push(i.id);
-      p.parts.push({ for_user_id: i.for_user_id, quantity: i.quantity });
+      p.parts.push({
+        for_user_id: i.for_user_id,
+        quantity: i.quantity,
+        subgroup_members: i.for_subgroup_id ? subMembers.get(i.for_subgroup_id) ?? [] : null,
+      });
       byKey.set(k, p);
     }
     products.push(...byKey.values());

@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import Sheet from "@/components/Sheet";
 import { supabase } from "@/lib/supabase/client";
 import { useMe } from "@/components/UserProvider";
+import RecurringPlans from "@/components/RecurringPlans";
 import { UNIT_LABEL, type Dish, type Ingredient, type Unit } from "@/lib/types";
 
 type Row = { name: string; unit: Unit; quantity: string };
@@ -18,6 +19,7 @@ export default function PlatsPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Dish | "new" | null>(null);
+  const [tab, setTab] = useState<"dishes" | "fixed">("dishes");
 
   async function load() {
     const sb = supabase();
@@ -46,31 +48,58 @@ export default function PlatsPage() {
     <>
       <PageHeader
         title="Plats"
-        intro="Cada plat porta la quantitat d'ingredients per a una ració. A partir d'aquí es calcula la llista de la compra."
         actions={
-          <button className="btn btn-primary" onClick={() => setEditing("new")}>
-            <Plus size={20} aria-hidden /> Nou plat
-          </button>
+          <div className="inline-flex rounded-xl border-2 border-ink p-0.5" role="group" aria-label="Què vols veure">
+            {(
+              [
+                ["dishes", "Plats"],
+                ["fixed", "Consum fix"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                aria-pressed={tab === k}
+                className={`min-h-10 px-4 rounded-[9px] font-bold ${tab === k ? "bg-ink text-paper" : "text-ink"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         }
       />
 
-      {loading ? (
-        <p className="text-ink/70">Carregant plats...</p>
-      ) : dishes.length === 0 ? (
-        <div className="panel p-6 max-w-xl">
-          <h2 className="text-2xl font-extrabold">Encara no hi ha cap plat</h2>
-          <p className="mt-2">Crea el primer plat amb els seus ingredients i ja el podràs posar al calendari.</p>
-          <button className="btn btn-primary mt-5" onClick={() => setEditing("new")}>
-            <Plus size={20} aria-hidden /> Crea un plat
-          </button>
-        </div>
+      {tab === "fixed" ? (
+        <RecurringPlans ingredients={ingredients} onIngredientsChanged={load} />
       ) : (
-        <div className="space-y-10">
-          <DishList title="Els meus plats" dishes={mine} onOpen={setEditing} />
-          {others.length > 0 && (
-            <DishList title="Plats del grup" dishes={others} onOpen={setEditing} showOwner />
+        <>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-2xl text-lg text-ink/75">
+              Cada plat porta la quantitat d&apos;ingredients per a una ració. A partir d&apos;aquí es calcula la llista
+              de la compra.
+            </p>
+            <button className="btn btn-primary" onClick={() => setEditing("new")}>
+              <Plus size={20} aria-hidden /> Nou plat
+            </button>
+          </div>
+
+          {loading ? (
+            <p className="text-ink/70">Carregant plats...</p>
+          ) : dishes.length === 0 ? (
+            <div className="panel p-6 max-w-xl">
+              <h2 className="text-2xl font-extrabold">Encara no hi ha cap plat</h2>
+              <p className="mt-2">Crea el primer plat amb els seus ingredients i ja el podràs posar al calendari.</p>
+              <button className="btn btn-primary mt-5" onClick={() => setEditing("new")}>
+                <Plus size={20} aria-hidden /> Crea un plat
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-10">
+              <DishList title="Els meus plats" dishes={mine} onOpen={setEditing} />
+              {others.length > 0 && <DishList title="Plats del grup" dishes={others} onOpen={setEditing} showOwner />}
+            </div>
           )}
-        </div>
+        </>
       )}
 
       <Sheet
@@ -245,7 +274,9 @@ function DishEditor({
         <p className="text-2xl font-display font-bold">{dish.name}</p>
         {dish.description && <p>{dish.description}</p>}
         <IngredientTable dish={dish} />
-        <p className="text-sm text-ink/70">Només {dish.owner?.display_name ?? "qui l'ha creat"} pot editar aquest plat.</p>
+        <p className="text-sm text-ink/70">
+          Només {dish.owner?.display_name ?? "qui l'ha creat"} pot editar aquest plat.
+        </p>
       </div>
     );
   }
@@ -279,7 +310,10 @@ function DishEditor({
         </datalist>
         <div className="space-y-2">
           {rows.map((r, idx) => (
-            <div key={idx} className="grid grid-cols-[minmax(0,1fr)_4rem_4.1rem_2.75rem] sm:grid-cols-[minmax(0,1fr)_5.5rem_4.6rem_2.75rem] gap-1.5 sm:gap-2 items-center">
+            <div
+              key={idx}
+              className="grid grid-cols-[minmax(0,1fr)_4rem_4.1rem_2.75rem] sm:grid-cols-[minmax(0,1fr)_5.5rem_4.6rem_2.75rem] gap-1.5 sm:gap-2 items-center"
+            >
               <input
                 className="field"
                 placeholder="Ingredient"

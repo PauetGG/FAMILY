@@ -81,11 +81,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh md:flex">
       {/* Barra lateral: iPad i ordinador */}
       <aside className="hidden md:flex md:flex-col md:w-24 xl:w-64 shrink-0 bg-ink text-paper sticky top-0 h-dvh">
-        <Link href="/" className="block px-3 xl:px-6 pt-7 pb-8" aria-label="Family Love Food, inici">
+        <Link href="/" className="block px-3 xl:px-6 pt-7 pb-8" aria-label="Family Loves Food, inici">
           <span className="hidden xl:block font-display font-extrabold text-[2.6rem] leading-[0.88] tracking-[-0.04em]">
             Family
             <br />
-            Love
+            Loves
             <br />
             Food
           </span>
@@ -103,7 +103,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Capçalera: mòbil */}
       <header className="md:hidden sticky top-0 z-20 bg-ink text-paper pt-[env(safe-area-inset-top)]">
         <div className="px-4 h-14 flex items-center">
-          <span className="font-display font-extrabold text-xl tracking-[-0.03em]">Family Love Food</span>
+          <span className="font-display font-extrabold text-xl tracking-[-0.03em]">Family Loves Food</span>
         </div>
       </header>
 

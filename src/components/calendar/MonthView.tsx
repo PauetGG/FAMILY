@@ -1,9 +1,24 @@
 "use client";
 
 import { DAY_SHORT, dayLabel, monthGrid, toKey } from "@/lib/dates";
-import type { CalendarPerson, DietEntry } from "@/lib/types";
+import { MEALS, type CalendarPerson, type DietEntry } from "@/lib/types";
 
-// Mes sencer: a cada dia, el nom de cada persona. Ple si ja ha posat plats, en gris si no.
+// Mes sencer: a cada dia, el nom de cada persona.
+// Marró: té tots els àpats posats. Marró clar: en té algun. Gris: no en té cap.
+
+type Status = "full" | "some" | "none";
+
+const PILL: Record<Status, string> = {
+  full: "bg-brown text-card",
+  some: "bg-tan text-ink",
+  none: "border border-ink/25 text-ink/45",
+};
+
+const STATUS_TEXT: Record<Status, string> = {
+  full: "tots els àpats",
+  some: "algun àpat",
+  none: "cap àpat",
+};
 export default function MonthView({
   cursor,
   todayKey,
@@ -18,7 +33,17 @@ export default function MonthView({
   onOpenDay: (date: string) => void;
 }) {
   const days = monthGrid(cursor);
-  const planned = new Set(entries.map((e) => `${e.date}|${e.user_id}`));
+  // Quants àpats diferents té cada persona cada dia
+  const meals = new Map<string, Set<string>>();
+  for (const e of entries) {
+    const k = `${e.date}|${e.user_id}`;
+    if (!meals.has(k)) meals.set(k, new Set());
+    meals.get(k)!.add(e.meal);
+  }
+  const status = (date: string, userId: string): Status => {
+    const n = meals.get(`${date}|${userId}`)?.size ?? 0;
+    return n >= MEALS.length ? "full" : n > 0 ? "some" : "none";
+  };
 
   return (
     <div>
@@ -34,14 +59,11 @@ export default function MonthView({
           const key = toKey(d);
           const inMonth = d.getMonth() === cursor.getMonth();
           const isToday = key === todayKey;
-          const done = people.filter((p) => planned.has(`${key}|${p.id}`));
           return (
             <button
               key={key}
               onClick={() => onOpenDay(key)}
-              aria-label={`${dayLabel(d)}. ${
-                done.length ? `Han planificat: ${done.map((p) => p.name).join(", ")}` : "Ningú ha planificat res"
-              }`}
+              aria-label={`${dayLabel(d)}. ${people.map((p) => `${p.name}: ${STATUS_TEXT[status(key, p.id)]}`).join(", ")}`}
               className={`flex flex-col items-stretch text-left rounded-lg sm:rounded-xl border-2 p-1 sm:p-2 min-h-[4.5rem] sm:min-h-24 lg:min-h-28 ${
                 isToday ? "border-brown bg-card" : "border-line bg-card hover:border-ink"
               } ${inMonth ? "" : "opacity-45"}`}
@@ -57,13 +79,10 @@ export default function MonthView({
               {/* Mòbil: inicials */}
               <span className="mt-auto flex flex-wrap gap-0.5 sm:hidden">
                 {people.map((p) => {
-                  const on = planned.has(`${key}|${p.id}`);
                   return (
                     <span
                       key={p.id}
-                      className={`flex h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-bold ${
-                        on ? "bg-brown text-card" : "border border-ink/30 text-ink/45"
-                      }`}
+                      className={`flex h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-bold ${PILL[status(key, p.id)]}`}
                       aria-hidden
                     >
                       {p.name.slice(0, 1).toUpperCase()}
@@ -75,13 +94,10 @@ export default function MonthView({
               {/* iPad i ordinador: noms */}
               <span className="mt-auto hidden sm:flex flex-col gap-1 pt-1.5">
                 {people.map((p) => {
-                  const on = planned.has(`${key}|${p.id}`);
                   return (
                     <span
                       key={p.id}
-                      className={`truncate rounded-md px-1.5 py-0.5 text-xs lg:text-[0.8rem] font-bold ${
-                        on ? "bg-brown text-card" : "border border-ink/25 text-ink/45"
-                      }`}
+                      className={`truncate rounded-md px-1.5 py-0.5 text-xs lg:text-[0.8rem] font-bold ${PILL[status(key, p.id)]}`}
                       aria-hidden
                     >
                       {p.name}
@@ -96,10 +112,13 @@ export default function MonthView({
 
       <p className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <span className="inline-flex items-center gap-2">
-          <span className="h-4 w-4 rounded bg-brown" aria-hidden /> Ja ha posat plats
+          <span className="h-4 w-4 rounded bg-brown" aria-hidden /> Tots els àpats
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="h-4 w-4 rounded border border-ink/30" aria-hidden /> Encara no
+          <span className="h-4 w-4 rounded bg-tan" aria-hidden /> Algun àpat
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-4 w-4 rounded border border-ink/30" aria-hidden /> Cap
         </span>
         <span className="text-ink/60">Toca un dia per veure qui ha triat què.</span>
       </p>

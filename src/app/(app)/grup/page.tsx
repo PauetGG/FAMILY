@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Plus } from "lucide-react";
+import { LogOut, Plus, Trash2 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/lib/supabase/client";
 import { useMe } from "@/components/UserProvider";
-import type { Group, Profile } from "@/lib/types";
+import type { Group, Profile, Subgroup } from "@/lib/types";
 
 type Member = { group_id: string; user_id: string; role: "owner" | "member"; profiles: Profile | null };
 type ShareLevel = "view" | "edit";
@@ -15,6 +15,8 @@ export default function GrupPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [shares, setShares] = useState<Map<string, ShareLevel>>(new Map());
+  const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
+  const [newSub, setNewSub] = useState<Record<string, string>>({});
   const [name, setName] = useState("");
   const [newGroup, setNewGroup] = useState("");
   const [code, setCode] = useState("");
@@ -23,11 +25,13 @@ export default function GrupPage() {
   async function load() {
     if (!me) return;
     const sb = supabase();
-    const [g, m, s] = await Promise.all([
+    const [g, m, s, sg] = await Promise.all([
       sb.from("groups").select("id, name, invite_code, created_by").order("created_at"),
       sb.from("group_members").select("group_id, user_id, role, profiles(id, display_name)"),
       sb.from("diet_shares").select("shared_with_id, can_edit").eq("owner_id", me.id),
+      sb.from("subgroups").select("id, group_id, name, subgroup_members(user_id)").order("created_at"),
     ]);
+    setSubgroups((sg.data as Subgroup[]) ?? []);
     setGroups((g.data as Group[]) ?? []);
     setMembers((m.data as Member[]) ?? []);
     const map = new Map<string, ShareLevel>();
@@ -99,6 +103,46 @@ export default function GrupPage() {
     setShares((s) => new Map(s).set(userId, level));
   }
 
+  async function createSubgroup(e: React.FormEvent, groupId: string) {
+    e.preventDefault();
+    if (!me) return;
+    const name = (newSub[groupId] ?? "").trim();
+    if (!name) return;
+    const sb = supabase();
+    const { data, error } = await sb.from("subgroups").insert({ group_id: groupId, name }).select("id").single();
+    if (error || !data) return setMsg({ text: "No s'ha pogut crear el subgrup.", error: true });
+    // Qui el crea hi entra de entrada; la resta s'afegeix tocant els noms
+    await sb.from("subgroup_members").insert({ subgroup_id: data.id, user_id: me.id });
+    setNewSub((n) => ({ ...n, [groupId]: "" }));
+    setMsg({ text: `Subgrup "${name}" creat. Toca els noms per afegir-hi gent.` });
+    await load();
+  }
+
+  async function toggleSubMember(sub: Subgroup, userId: string) {
+    const sb = supabase();
+    const inside = sub.subgroup_members.some((m) => m.user_id === userId);
+    setSubgroups((all) =>
+      all.map((x) =>
+        x.id !== sub.id
+          ? x
+          : {
+              ...x,
+              subgroup_members: inside
+                ? x.subgroup_members.filter((m) => m.user_id !== userId)
+                : [...x.subgroup_members, { user_id: userId }],
+            },
+      ),
+    );
+    if (inside) await sb.from("subgroup_members").delete().eq("subgroup_id", sub.id).eq("user_id", userId);
+    else await sb.from("subgroup_members").insert({ subgroup_id: sub.id, user_id: userId });
+  }
+
+  async function deleteSubgroup(sub: Subgroup) {
+    if (!confirm(`Vols esborrar el subgrup "${sub.name}"? Les llistes que en tenien passaran a ser de tot el grup.`)) return;
+    setSubgroups((all) => all.filter((x) => x.id !== sub.id));
+    await supabase().from("subgroups").delete().eq("id", sub.id);
+  }
+
   async function signOut() {
     await supabase().auth.signOut();
     window.location.href = "/login";
@@ -150,6 +194,61 @@ export default function GrupPage() {
                     </li>
                   ))}
                 </ul>
+
+                <div className="border-t-2 border-ink px-5 py-4 space-y-3">
+                  <h3 className="text-xl font-extrabold">Subgrups</h3>
+                  {subgroups.filter((sg) => sg.group_id === g.id).length === 0 && (
+                    <p className="text-ink/70">
+                      Per fer llistes de la compra només d&apos;una part del grup, per exemple una parella.
+                    </p>
+                  )}
+                  {subgroups
+                    .filter((sg) => sg.group_id === g.id)
+                    .map((sg) => (
+                      <div key={sg.id} className="rounded-xl border-2 border-line p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold">{sg.name}</span>
+                          <button
+                            className="rounded-md p-1.5 text-ink/55 hover:text-danger hover:bg-danger/10"
+                            onClick={() => deleteSubgroup(sg)}
+                            aria-label={`Esborra el subgrup ${sg.name}`}
+                          >
+                            <Trash2 size={17} aria-hidden />
+                          </button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={`Qui és a ${sg.name}`}>
+                          {gm.map((m) => {
+                            const on = sg.subgroup_members.some((x) => x.user_id === m.user_id);
+                            return (
+                              <button
+                                key={m.user_id}
+                                onClick={() => toggleSubMember(sg, m.user_id)}
+                                aria-pressed={on}
+                                className={`min-h-9 rounded-full border-2 px-3.5 text-sm font-bold ${
+                                  on ? "bg-brown border-brown text-card" : "border-line bg-card text-ink/70 hover:border-ink"
+                                }`}
+                              >
+                                {m.profiles?.display_name || "Sense nom"}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  <form onSubmit={(e) => createSubgroup(e, g.id)} className="flex gap-2">
+                    <input
+                      className="field"
+                      placeholder="Nom del subgrup"
+                      aria-label="Nom del subgrup nou"
+                      value={newSub[g.id] ?? ""}
+                      onChange={(e) => setNewSub((n) => ({ ...n, [g.id]: e.target.value }))}
+                    />
+                    <button className="btn btn-outline shrink-0" disabled={!(newSub[g.id] ?? "").trim()}>
+                      <Plus size={18} aria-hidden /> Crea
+                    </button>
+                  </form>
+                </div>
+
                 <div className="px-5 pb-4">
                   <button className="btn btn-ghost text-danger px-0" onClick={() => leaveGroup(g)}>
                     Surt del grup

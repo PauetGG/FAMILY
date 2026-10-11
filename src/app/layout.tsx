@@ -6,12 +6,12 @@ import "./globals.css";
 import RegisterSW from "@/components/RegisterSW";
 
 export const metadata: Metadata = {
-  title: "Family Love Food",
+  title: "Family Loves Food",
   description: "Dieta, compra i tiquets compartits de casa",
-  applicationName: "Family Love Food",
+  applicationName: "Family Loves Food",
   appleWebApp: {
     capable: true,
-    title: "Family Love Food",
+    title: "Family Loves Food",
     statusBarStyle: "black",
   },
   icons: {

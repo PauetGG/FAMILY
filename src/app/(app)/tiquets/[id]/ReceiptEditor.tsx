@@ -22,7 +22,7 @@ type Receipt = {
   total: number | null;
   image_path: string | null;
   is_confirmed: boolean;
-  shopping_lists: { name: string } | null;
+  shopping_lists: { name: string; subgroup_id: string | null } | null;
 };
 
 type Payer = { user_id: string; share: number };
@@ -44,6 +44,7 @@ type ListItem = {
   quantity: number | null;
   unit: string | null;
   for_user_id: string | null;
+  for_subgroup_id: string | null;
   ingredients: { name: string } | null;
 };
 
@@ -89,7 +90,7 @@ export default function ReceiptEditor() {
       const { data: r } = await sb
         .from("receipts")
         .select(
-          "id, uploaded_by, group_id, shopping_list_id, store_name, purchased_at, total, image_path, is_confirmed, shopping_lists(name)",
+          "id, uploaded_by, group_id, shopping_list_id, store_name, purchased_at, total, image_path, is_confirmed, shopping_lists(name, subgroup_id)",
         )
         .eq("id", id)
         .maybeSingle();
@@ -102,7 +103,14 @@ export default function ReceiptEditor() {
           .from("group_members")
           .select("user_id, profiles(id, display_name)")
           .eq("group_id", r.group_id);
-        const ps = ((gm ?? []) as { profiles: Profile | null }[]).map((m) => m.profiles).filter((p): p is Profile => !!p);
+        let ps = ((gm ?? []) as { profiles: Profile | null }[]).map((m) => m.profiles).filter((p): p is Profile => !!p);
+        // Tiquet d'una llista d'un subgrup: només paga la gent del subgrup
+        const subgroupId = (r as Receipt).shopping_lists?.subgroup_id;
+        if (subgroupId) {
+          const { data: sm } = await sb.from("subgroup_members").select("user_id").eq("subgroup_id", subgroupId);
+          const ids = new Set((sm ?? []).map((m: { user_id: string }) => m.user_id));
+          ps = ps.filter((p) => ids.has(p.id));
+        }
         ps.sort((a, b) => Number(b.id === me.id) - Number(a.id === me.id));
         setPeople(ps);
       } else {
@@ -112,14 +120,27 @@ export default function ReceiptEditor() {
       if (r.shopping_list_id) {
         const { data: items } = await sb
           .from("shopping_list_items")
-          .select("id, ingredient_id, custom_name, quantity, unit, for_user_id, ingredients(name)")
+          .select("id, ingredient_id, custom_name, quantity, unit, for_user_id, for_subgroup_id, ingredients(name)")
           .eq("list_id", r.shopping_list_id);
+        // Gent de cada subgrup, per repartir el que és d'un subgrup (el menjar del gos)
+        const subIds = [...new Set(((items ?? []) as ListItem[]).map((i) => i.for_subgroup_id).filter(Boolean))] as string[];
+        const subMembers = new Map<string, string[]>();
+        if (subIds.length) {
+          const { data: sm } = await sb.from("subgroup_members").select("subgroup_id, user_id").in("subgroup_id", subIds);
+          for (const m of (sm ?? []) as { subgroup_id: string; user_id: string }[]) {
+            subMembers.set(m.subgroup_id, [...(subMembers.get(m.subgroup_id) ?? []), m.user_id]);
+          }
+        }
         const byKey = new Map<string, Product>();
         for (const i of (items ?? []) as ListItem[]) {
           const k = itemKey(i);
           const p = byKey.get(k) ?? { key: k, name: i.ingredients?.name ?? i.custom_name ?? "", ids: [], parts: [] };
           p.ids.push(i.id);
-          p.parts.push({ for_user_id: i.for_user_id, quantity: i.quantity });
+          p.parts.push({
+            for_user_id: i.for_user_id,
+            quantity: i.quantity,
+            subgroup_members: i.for_subgroup_id ? subMembers.get(i.for_subgroup_id) ?? [] : null,
+          });
           byKey.set(k, p);
         }
         setProducts([...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, "ca")));

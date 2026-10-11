@@ -19,6 +19,8 @@ type List = {
   date_to: string | null;
   is_done: boolean;
   groups: { name: string } | null;
+  subgroup_id: string | null;
+  subgroups: { name: string } | null;
 };
 
 type Item = {
@@ -28,6 +30,7 @@ type Item = {
   quantity: number | null;
   unit: Unit | null;
   for_user_id: string | null;
+  for_subgroup_id: string | null;
   checked: boolean;
   source: "diet" | "manual";
   ingredients: { name: string } | null;
@@ -38,7 +41,7 @@ type Row = {
   name: string;
   unit: Unit | null;
   total: number | null;
-  parts: { userId: string | null; qty: number | null }[];
+  parts: { userId: string | null; subgroupId: string | null; qty: number | null }[];
   ids: string[];
   checked: boolean;
 };
@@ -54,6 +57,7 @@ export default function ShoppingList() {
   const [list, setList] = useState<List | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [people, setPeople] = useState<Profile[]>([]);
+  const [subs, setSubs] = useState<{ id: string; name: string }[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [view, setView] = useState<"together" | "person">("together");
   const [busy, setBusy] = useState(false);
@@ -63,7 +67,7 @@ export default function ShoppingList() {
   const loadItems = useCallback(async () => {
     const { data } = await supabase()
       .from("shopping_list_items")
-      .select("id, ingredient_id, custom_name, quantity, unit, for_user_id, checked, source, ingredients(name)")
+      .select("id, ingredient_id, custom_name, quantity, unit, for_user_id, for_subgroup_id, checked, source, ingredients(name)")
       .eq("list_id", id);
     setItems((data as Item[]) ?? []);
   }, [id]);
@@ -75,7 +79,7 @@ export default function ShoppingList() {
       const sb = supabase();
       const { data: l } = await sb
         .from("shopping_lists")
-        .select("id, name, owner_id, group_id, date_from, date_to, is_done, groups(name)")
+        .select("id, name, owner_id, group_id, date_from, date_to, is_done, groups(name), subgroup_id, subgroups(name)")
         .eq("id", id)
         .maybeSingle();
       if (!l) return setNotFound(true);
@@ -89,11 +93,18 @@ export default function ShoppingList() {
           .from("group_members")
           .select("user_id, profiles(id, display_name)")
           .eq("group_id", l.group_id);
-        setPeople(
-          ((gm ?? []) as { user_id: string; profiles: Profile | null }[])
-            .map((m) => m.profiles)
-            .filter((p): p is Profile => !!p),
-        );
+        let ps = ((gm ?? []) as { user_id: string; profiles: Profile | null }[])
+          .map((m) => m.profiles)
+          .filter((p): p is Profile => !!p);
+        // Si la llista és d'un subgrup, només hi surt la seva gent
+        if (l.subgroup_id) {
+          const { data: sm } = await sb.from("subgroup_members").select("user_id").eq("subgroup_id", l.subgroup_id);
+          const ids = new Set((sm ?? []).map((m: { user_id: string }) => m.user_id));
+          ps = ps.filter((p) => ids.has(p.id));
+        }
+        setPeople(ps);
+        const { data: sg } = await sb.from("subgroups").select("id, name").eq("group_id", l.group_id).order("created_at");
+        setSubs((sg as { id: string; name: string }[]) ?? []);
       } else {
         setPeople([me]);
       }
@@ -120,10 +131,17 @@ export default function ShoppingList() {
   }, [id, loadItems]);
 
   const isGroup = !!list?.group_id;
+  // Per a qui és: una persona, un subgrup (el menjar del gos de la parella) o comú
   const nameOf = useCallback(
-    (userId: string | null) =>
-      userId === null ? "Comú" : userId === me?.id ? "Tu" : people.find((p) => p.id === userId)?.display_name ?? "Algú",
-    [people, me],
+    (userId: string | null, subgroupId?: string | null) =>
+      userId
+        ? userId === me?.id
+          ? "Tu"
+          : people.find((p) => p.id === userId)?.display_name ?? "Algú"
+        : subgroupId
+          ? subs.find((x) => x.id === subgroupId)?.name ?? "Subgrup"
+          : "Comú",
+    [people, me, subs],
   );
 
   const together = useMemo<Row[]>(() => {
@@ -132,7 +150,7 @@ export default function ShoppingList() {
       const key = itemKey(i);
       const row = map.get(key) ?? { key, name: itemName(i), unit: i.unit, total: null, parts: [], ids: [], checked: true };
       if (i.quantity != null) row.total = (row.total ?? 0) + Number(i.quantity);
-      row.parts.push({ userId: i.for_user_id, qty: i.quantity });
+      row.parts.push({ userId: i.for_user_id, subgroupId: i.for_subgroup_id, qty: i.quantity });
       row.ids.push(i.id);
       row.checked = row.checked && i.checked;
       map.set(key, row);
@@ -143,7 +161,7 @@ export default function ShoppingList() {
   const byPerson = useMemo(() => {
     const groups = new Map<string, Row[]>();
     for (const i of items) {
-      const k = i.for_user_id ?? COMMON;
+      const k = i.for_user_id ?? (i.for_subgroup_id ? `sg:${i.for_subgroup_id}` : COMMON);
       const row: Row = {
         key: i.id,
         name: itemName(i),
@@ -155,11 +173,20 @@ export default function ShoppingList() {
       };
       groups.set(k, [...(groups.get(k) ?? []), row]);
     }
-    const order = [...(me ? [me.id] : []), ...people.map((p) => p.id).filter((p) => p !== me?.id), COMMON];
+    const order = [
+      ...(me ? [me.id] : []),
+      ...people.map((p) => p.id).filter((p) => p !== me?.id),
+      ...subs.map((x) => `sg:${x.id}`),
+      COMMON,
+    ];
     return order
       .filter((k) => groups.has(k))
-      .map((k) => ({ key: k, title: k === COMMON ? "Comú" : nameOf(k), rows: sortRows(groups.get(k)!) }));
-  }, [items, people, me, nameOf]);
+      .map((k) => ({
+        key: k,
+        title: k === COMMON ? "Comú" : k.startsWith("sg:") ? nameOf(null, k.slice(3)) : nameOf(k),
+        rows: sortRows(groups.get(k)!),
+      }));
+  }, [items, people, me, nameOf, subs]);
 
   async function toggle(row: Row) {
     const next = !row.checked;
@@ -219,7 +246,7 @@ export default function ShoppingList() {
         <div>
           <h1 className="text-[2.1rem] sm:text-5xl font-extrabold">{list.name}</h1>
           <p className="mt-2 text-lg text-ink/75">
-            {list.groups ? `Grup ${list.groups.name}` : "Només meva"}
+            {list.groups ? `Grup ${list.groups.name}${list.subgroups ? `, ${list.subgroups.name}` : ""}` : "Només meva"}
             {list.date_from && `, del ${formatRange(list.date_from, list.date_to)}`}
           </p>
         </div>
@@ -289,6 +316,7 @@ export default function ShoppingList() {
             listId={id}
             isGroup={isGroup}
             people={people}
+            subgroups={list.subgroup_id ? [] : subs}
             meId={me?.id ?? null}
             ingredients={ingredients}
             onAdded={loadItems}
@@ -329,7 +357,7 @@ function ItemsBlock({
 }: {
   rows: Row[];
   onToggle: (r: Row) => void;
-  nameOf: (id: string | null) => string;
+  nameOf: (id: string | null, subgroupId?: string | null) => string;
   showParts?: boolean;
   onRemove?: (id: string) => void;
 }) {
@@ -368,14 +396,14 @@ function ItemRow({
 }: {
   row: Row;
   onToggle: (r: Row) => void;
-  nameOf: (id: string | null) => string;
+  nameOf: (id: string | null, subgroupId?: string | null) => string;
   showParts?: boolean;
   onRemove?: (id: string) => void;
 }) {
   const parts =
     showParts
       ? row.parts
-          .map((p) => `${nameOf(p.userId)}${p.qty != null ? ` ${formatQty(p.qty, row.unit)}` : ""}`)
+          .map((p) => `${nameOf(p.userId, p.subgroupId)}${p.qty != null ? ` ${formatQty(p.qty, row.unit)}` : ""}`)
           .join(", ")
       : null;
 
@@ -422,6 +450,7 @@ function AddItemForm({
   listId,
   isGroup,
   people,
+  subgroups,
   meId,
   ingredients,
   onAdded,
@@ -429,6 +458,7 @@ function AddItemForm({
   listId: string;
   isGroup: boolean;
   people: Profile[];
+  subgroups: { id: string; name: string }[];
   meId: string | null;
   ingredients: Ingredient[];
   onAdded: () => Promise<void>;
@@ -464,7 +494,8 @@ function AddItemForm({
         custom_name: known ? null : n,
         quantity: q && q > 0 ? q : null,
         unit: q && q > 0 ? unit : null,
-        for_user_id: forUser === COMMON ? null : forUser,
+        for_user_id: forUser === COMMON || forUser.startsWith("sg:") ? null : forUser,
+        for_subgroup_id: forUser.startsWith("sg:") ? forUser.slice(3) : null,
         source: "manual",
       });
     setName("");
@@ -509,10 +540,15 @@ function AddItemForm({
       </div>
       {isGroup && (
         <select className="field" aria-label="Per a qui és" value={forUser} onChange={(e) => setForUser(e.target.value)}>
-          <option value={COMMON}>Comú, per a tothom</option>
+          <option value={COMMON}>Comú, per a tots</option>
           {people.map((p) => (
             <option key={p.id} value={p.id}>
               Per a {p.id === meId ? "mi" : p.display_name}
+            </option>
+          ))}
+          {subgroups.map((x) => (
+            <option key={x.id} value={`sg:${x.id}`}>
+              Per a {x.name}
             </option>
           ))}
         </select>
