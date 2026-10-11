@@ -31,6 +31,9 @@ export async function proxy(request: NextRequest) {
 
   const isLogin = request.nextUrl.pathname.startsWith("/login");
 
+  // Les rutes de l'API responen elles mateixes si no hi ha sessió
+  if (request.nextUrl.pathname.startsWith("/api/")) return response;
+
   if (!user && !isLogin) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
