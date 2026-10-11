@@ -10,7 +10,8 @@ import DayPopup, { type DishLite } from "@/components/calendar/DayPopup";
 import { supabase } from "@/lib/supabase/client";
 import { useMe } from "@/components/UserProvider";
 import { addDays, addMonths, dayLabel, monthGrid, monthLabel, mondayOf, toKey, weekLabel } from "@/lib/dates";
-import type { CalendarPerson, DietEntry, Meal } from "@/lib/types";
+import type { CalendarPerson, DietEntry } from "@/lib/types";
+import { MEAL_SELECT, type UserMeal } from "@/lib/meals";
 
 type View = "month" | "week" | "day";
 
@@ -21,7 +22,7 @@ const VIEWS: { key: View; label: string }[] = [
 ];
 
 const ENTRY_SELECT =
-  "id, user_id, date, meal, dish_id, servings, dishes(id, name, dish_ingredients(quantity, ingredients(name, unit)))";
+  "id, user_id, date, meal_id, dish_id, servings, dishes(id, name, dish_ingredients(quantity, ingredients(name, unit)))";
 
 export default function CalendarPage() {
   const { me } = useMe();
@@ -32,6 +33,8 @@ export default function CalendarPage() {
   const [people, setPeople] = useState<CalendarPerson[]>([]);
   const [entries, setEntries] = useState<DietEntry[]>([]);
   const [dishes, setDishes] = useState<DishLite[]>([]);
+  // Àpats de cada persona del calendari, ja ordenats segons l'ordre de cadascú
+  const [meals, setMeals] = useState<UserMeal[]>([]);
   const [popupDate, setPopupDate] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -74,6 +77,13 @@ export default function CalendarPage() {
       });
       setPeople([...list.values()]);
       setDishes((ds as DishLite[]) ?? []);
+
+      const { data: ms } = await sb
+        .from("meals")
+        .select(MEAL_SELECT)
+        .in("user_id", [...list.keys()])
+        .order("position");
+      setMeals((ms as UserMeal[]) ?? []);
     })();
   }, [me]);
 
@@ -110,10 +120,10 @@ export default function CalendarPage() {
     loadEntries();
   }, [loadEntries]);
 
-  async function addEntry(date: string, meal: Meal, userId: string, dishId: string, servings: number) {
+  async function addEntry(date: string, mealId: string, userId: string, dishId: string, servings: number) {
     const { error } = await supabase()
       .from("diet_entries")
-      .insert({ user_id: userId, date, meal, dish_id: dishId, servings });
+      .insert({ user_id: userId, date, meal_id: mealId, dish_id: dishId, servings });
     if (error) setMessage("No s'ha pogut afegir el plat.");
     await loadEntries();
   }
@@ -160,7 +170,7 @@ export default function CalendarPage() {
   const prevLabel = view === "month" ? "Mes anterior" : view === "week" ? "Setmana anterior" : "Dia anterior";
   const nextLabel = view === "month" ? "Mes següent" : view === "week" ? "Setmana següent" : "Dia següent";
 
-  const dayActions = { people, entries, dishes, onAdd: addEntry, onRemove: removeEntry };
+  const dayActions = { people, entries, dishes, meals, onAdd: addEntry, onRemove: removeEntry };
 
   return (
     <>
@@ -211,10 +221,24 @@ export default function CalendarPage() {
       )}
 
       {view === "month" && (
-        <MonthView cursor={cursor} todayKey={todayKey} people={people} entries={entries} onOpenDay={setPopupDate} />
+        <MonthView
+          cursor={cursor}
+          todayKey={todayKey}
+          people={people}
+          entries={entries}
+          meals={meals}
+          onOpenDay={setPopupDate}
+        />
       )}
       {view === "week" && (
-        <WeekView monday={mondayOf(cursor)} todayKey={todayKey} people={people} entries={entries} onOpenDay={setPopupDate} />
+        <WeekView
+          monday={mondayOf(cursor)}
+          todayKey={todayKey}
+          people={people}
+          entries={entries}
+          meals={meals}
+          onOpenDay={setPopupDate}
+        />
       )}
       {view === "day" && <DayView date={toKey(cursor)} {...dayActions} />}
 

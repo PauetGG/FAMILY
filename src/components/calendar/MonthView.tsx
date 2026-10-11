@@ -1,7 +1,8 @@
 "use client";
 
 import { DAY_SHORT, dayLabel, monthGrid, toKey } from "@/lib/dates";
-import { MEALS, type CalendarPerson, type DietEntry } from "@/lib/types";
+import type { CalendarPerson, DietEntry } from "@/lib/types";
+import type { UserMeal } from "@/lib/meals";
 
 // Mes sencer: a cada dia, el nom de cada persona.
 // Marró: té tots els àpats posats. Marró clar: en té algun. Gris: no en té cap.
@@ -24,25 +25,31 @@ export default function MonthView({
   todayKey,
   people,
   entries,
+  meals,
   onOpenDay,
 }: {
   cursor: Date;
   todayKey: string;
   people: CalendarPerson[];
   entries: DietEntry[];
+  meals: UserMeal[];
   onOpenDay: (date: string) => void;
 }) {
   const days = monthGrid(cursor);
-  // Quants àpats diferents té cada persona cada dia
-  const meals = new Map<string, Set<string>>();
+  // Quants àpats té cada persona (cadascú pot tenir-ne un nombre diferent)
+  const mealCount = new Map<string, number>();
+  for (const m of meals) mealCount.set(m.user_id, (mealCount.get(m.user_id) ?? 0) + 1);
+  // Quants àpats diferents té posats cada persona cada dia
+  const filled = new Map<string, Set<string>>();
   for (const e of entries) {
     const k = `${e.date}|${e.user_id}`;
-    if (!meals.has(k)) meals.set(k, new Set());
-    meals.get(k)!.add(e.meal);
+    if (!filled.has(k)) filled.set(k, new Set());
+    filled.get(k)!.add(e.meal_id);
   }
   const status = (date: string, userId: string): Status => {
-    const n = meals.get(`${date}|${userId}`)?.size ?? 0;
-    return n >= MEALS.length ? "full" : n > 0 ? "some" : "none";
+    const n = filled.get(`${date}|${userId}`)?.size ?? 0;
+    const total = mealCount.get(userId) ?? 0;
+    return total > 0 && n >= total ? "full" : n > 0 ? "some" : "none";
   };
 
   return (

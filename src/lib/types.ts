@@ -1,4 +1,6 @@
 export type Unit = "g" | "ml" | "unit";
+// Els quatre àpats fixos només es fan servir ara al consum fix (recurring_items).
+// El calendari i els plats fan servir els àpats de cada usuari (lib/meals.ts).
 export type Meal = "breakfast" | "lunch" | "snack" | "dinner";
 
 export const UNIT_LABEL: Record<Unit, string> = { g: "g", ml: "ml", unit: "u." };
@@ -33,7 +35,7 @@ export type DietEntry = {
   id: string;
   user_id: string;
   date: string;
-  meal: Meal;
+  meal_id: string;
   dish_id: string;
   servings: number;
   dishes: {

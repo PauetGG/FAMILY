@@ -6,7 +6,8 @@ import { ChevronLeft, Minus, Plus, X } from "lucide-react";
 import Sheet from "@/components/Sheet";
 import { dayLabel, fromKey } from "@/lib/dates";
 import { formatQty } from "@/lib/format";
-import { MEALS, type CalendarPerson, type DietEntry, type Meal } from "@/lib/types";
+import type { CalendarPerson, DietEntry } from "@/lib/types";
+import { mealSlots, type UserMeal } from "@/lib/meals";
 
 export type DishLite = { id: string; name: string };
 
@@ -14,7 +15,8 @@ export type DayActions = {
   people: CalendarPerson[];
   entries: DietEntry[];
   dishes: DishLite[];
-  onAdd: (date: string, meal: Meal, userId: string, dishId: string, servings: number) => Promise<void>;
+  meals: UserMeal[];
+  onAdd: (date: string, mealId: string, userId: string, dishId: string, servings: number) => Promise<void>;
   onRemove: (id: string) => void;
 };
 
@@ -60,13 +62,17 @@ export function EntryItem({
 }
 
 // Tot un dia: cada àpat i, a dins, què ha triat cada persona
-export function DayDetail({ date, people, entries, dishes, onAdd, onRemove }: DayActions & { date: string }) {
-  const [picking, setPicking] = useState<{ meal: Meal; userId: string } | null>(null);
+export function DayDetail({ date, people, entries, dishes, meals, onAdd, onRemove }: DayActions & { date: string }) {
+  const [picking, setPicking] = useState<{ mealId: string; label: string; userId: string } | null>(null);
   const dayEntries = entries.filter((e) => e.date === date);
+  const slots = mealSlots(
+    meals,
+    people.map((p) => p.id),
+  );
 
   if (picking) {
     const person = people.find((p) => p.id === picking.userId);
-    const meal = MEALS.find((m) => m.key === picking.meal)?.label ?? "";
+    const meal = picking.label;
     return (
       <div>
         <button className="btn btn-ghost -ml-3 mb-2" onClick={() => setPicking(null)}>
@@ -79,7 +85,7 @@ export function DayDetail({ date, people, entries, dishes, onAdd, onRemove }: Da
         <DishPicker
           dishes={dishes}
           onPick={async (dishId, servings) => {
-            await onAdd(date, picking.meal, picking.userId, dishId, servings);
+            await onAdd(date, picking.mealId, picking.userId, dishId, servings);
             setPicking(null);
           }}
         />
@@ -89,14 +95,16 @@ export function DayDetail({ date, people, entries, dishes, onAdd, onRemove }: Da
 
   return (
     <div className="space-y-4">
-      {MEALS.map((m) => {
-        const mealEntries = dayEntries.filter((e) => e.meal === m.key);
+      {slots.map((slot) => {
         return (
-          <section key={m.key} className="rounded-2xl border-2 border-ink bg-card overflow-hidden">
-            <h3 className="bg-ink text-paper px-4 py-2 text-lg font-bold">{m.label}</h3>
+          <section key={slot.name} className="rounded-2xl border-2 border-ink bg-card overflow-hidden">
+            <h3 className="bg-ink text-paper px-4 py-2 text-lg font-bold">{slot.name}</h3>
             <ul className="divide-y-2 divide-line">
               {people.map((p) => {
-                const mine = mealEntries.filter((e) => e.user_id === p.id);
+                // Només surt qui té aquest àpat
+                const mealId = slot.byUser.get(p.id);
+                if (!mealId) return null;
+                const mine = dayEntries.filter((e) => e.user_id === p.id && e.meal_id === mealId);
                 return (
                   <li key={p.id} className="px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
@@ -104,8 +112,8 @@ export function DayDetail({ date, people, entries, dishes, onAdd, onRemove }: Da
                       {p.canEdit && (
                         <button
                           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-bold text-brown hover:bg-brown/10"
-                          onClick={() => setPicking({ meal: m.key, userId: p.id })}
-                          aria-label={`Afegeix plat: ${m.label}, ${p.name}`}
+                          onClick={() => setPicking({ mealId, label: slot.name, userId: p.id })}
+                          aria-label={`Afegeix plat: ${slot.name}, ${p.name}`}
                         >
                           <Plus size={16} aria-hidden /> Afegeix
                         </button>

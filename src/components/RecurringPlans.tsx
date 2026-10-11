@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import Swal from "sweetalert2";
 import Sheet from "@/components/Sheet";
 import { supabase } from "@/lib/supabase/client";
 import { formatQty } from "@/lib/format";
@@ -260,8 +261,20 @@ function PlanEditor({
     }
   }
 
-  async function remove() {
-    if (!plan || !confirm(`Vols esborrar "${plan.name}"?`)) return;
+    async function remove() {
+    if (!plan) return;
+    const { isConfirmed } = await Swal.fire({
+      target: document.querySelector<HTMLElement>("dialog[open]") ?? "body",
+      title: `Vols esborrar "${plan.name}"?`,
+      text: "Deixarà de comptar a les llistes de la compra.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, esborra'l",
+      cancelButtonText: "Cancel·la",
+      reverseButtons: true,
+      focusCancel: true,
+    });
+    if (!isConfirmed) return;
     setBusy(true);
     await supabase().from("recurring_plans").delete().eq("id", plan.id);
     await onDone();

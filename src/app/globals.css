@@ -126,4 +126,7 @@ h3 {
     border: 2px solid var(--color-ink);
     border-radius: 16px;
   }
+  .swal2-container {
+  z-index: 10000 !important;
+}
 }

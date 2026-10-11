@@ -1,7 +1,8 @@
 "use client";
 
 import { addDays, DAY_LONG, toKey } from "@/lib/dates";
-import { MEALS, type CalendarPerson, type DietEntry } from "@/lib/types";
+import type { CalendarPerson, DietEntry } from "@/lib/types";
+import { mealSlots, type UserMeal } from "@/lib/meals";
 import { EntryItem } from "./DayPopup";
 
 // Setmana: cada dia amb els seus àpats i qui ha triat cada plat
@@ -10,17 +11,23 @@ export default function WeekView({
   todayKey,
   people,
   entries,
+  meals,
   onOpenDay,
 }: {
   monday: Date;
   todayKey: string;
   people: CalendarPerson[];
   entries: DietEntry[];
+  meals: UserMeal[];
   onOpenDay: (date: string) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? "";
   const several = people.length > 1;
+  const slots = mealSlots(
+    meals,
+    people.map((p) => p.id),
+  );
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7 lg:gap-1.5">
@@ -47,12 +54,12 @@ export default function WeekView({
             </button>
             <div className="flex-1 p-2.5 space-y-2.5 min-h-24">
               {dayEntries.length === 0 && <p className="text-sm text-ink/50">Res planificat</p>}
-              {MEALS.map((m) => {
-                const items = dayEntries.filter((e) => e.meal === m.key);
+              {slots.map((slot) => {
+                const items = dayEntries.filter((e) => slot.byUser.get(e.user_id) === e.meal_id);
                 if (!items.length) return null;
                 return (
-                  <div key={m.key}>
-                    <p className="text-xs font-bold text-ink/60">{m.label}</p>
+                  <div key={slot.name}>
+                    <p className="text-xs font-bold text-ink/60">{slot.name}</p>
                     <div className="mt-0.5 space-y-1.5">
                       {items.map((e) => (
                         <div key={e.id} className="border-l-4 border-brown pl-2">
