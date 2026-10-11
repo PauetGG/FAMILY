@@ -8,7 +8,7 @@ import { useMe } from "@/components/UserProvider";
 import type { Group, Profile } from "@/lib/types";
 
 type Member = { group_id: string; user_id: string; role: "owner" | "member"; profiles: Profile | null };
-type ShareLevel = "none" | "view" | "edit";
+type ShareLevel = "view" | "edit";
 
 export default function GrupPage() {
   const { me, refresh } = useMe();
@@ -32,7 +32,8 @@ export default function GrupPage() {
     setMembers((m.data as Member[]) ?? []);
     const map = new Map<string, ShareLevel>();
     (s.data ?? []).forEach((r: { shared_with_id: string; can_edit: boolean }) =>
-      map.set(r.shared_with_id, r.can_edit ? "edit" : "view"),
+      // Dins el grup tothom ja veu el calendari: només compta qui el pot editar
+      r.can_edit && map.set(r.shared_with_id, "edit"),
     );
     setShares(map);
   }
@@ -88,12 +89,12 @@ export default function GrupPage() {
   async function setShare(userId: string, level: ShareLevel) {
     if (!me) return;
     const sb = supabase();
-    if (level === "none") {
+    if (level === "view") {
       await sb.from("diet_shares").delete().eq("owner_id", me.id).eq("shared_with_id", userId);
     } else {
       await sb
         .from("diet_shares")
-        .upsert({ owner_id: me.id, shared_with_id: userId, can_edit: level === "edit" });
+        .upsert({ owner_id: me.id, shared_with_id: userId, can_edit: true });
     }
     setShares((s) => new Map(s).set(userId, level));
   }
@@ -107,7 +108,7 @@ export default function GrupPage() {
     <>
       <PageHeader
         title="Grup"
-        intro="La gent amb qui compartiu llistes i tiquets. Cadascú té la seva dieta, i tu decideixes qui la pot veure."
+        intro="La gent amb qui compartiu llistes i tiquets. Tothom del grup veu el calendari dels altres, i tu decideixes qui pot editar el teu."
       />
 
       {msg && (
@@ -191,9 +192,10 @@ export default function GrupPage() {
 
         <div className="space-y-6">
           <section className="panel p-5">
-            <h2 className="text-2xl font-extrabold">Qui pot veure el meu calendari</h2>
+            <h2 className="text-2xl font-extrabold">Qui pot editar el meu calendari</h2>
+            <p className="mt-1 text-ink/75">Tothom del grup el veu. Aquí tries qui també hi pot afegir o treure plats.</p>
             {mates.length === 0 ? (
-              <p className="mt-2 text-ink/75">Quan hi hagi més gent als teus grups, podràs triar aquí qui veu la teva dieta.</p>
+              <p className="mt-2 text-ink/75">Quan hi hagi més gent als teus grups, podràs triar aquí qui pot editar el teu calendari.</p>
             ) : (
               <ul className="mt-3 divide-y-2 divide-line">
                 {mates.map((p) => (
@@ -202,11 +204,10 @@ export default function GrupPage() {
                     <select
                       className="field w-auto"
                       aria-label={`Accés de ${p.display_name} al teu calendari`}
-                      value={shares.get(p.id) ?? "none"}
+                      value={shares.get(p.id) ?? "view"}
                       onChange={(e) => setShare(p.id, e.target.value as ShareLevel)}
                     >
-                      <option value="none">No el veu</option>
-                      <option value="view">El pot veure</option>
+                      <option value="view">Només el veu</option>
                       <option value="edit">El pot editar</option>
                     </select>
                   </li>

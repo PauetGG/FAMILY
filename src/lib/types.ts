@@ -36,7 +36,15 @@ export type DietEntry = {
   meal: Meal;
   dish_id: string;
   servings: number;
-  dishes: { id: string; name: string } | null;
+  dishes: {
+    id: string;
+    name: string;
+    // Ingredients per ració, per mostrar-los a sota del plat al calendari
+    dish_ingredients?: { quantity: number; ingredients: { name: string; unit: Unit } | null }[];
+  } | null;
 };
+
+// Persona que surt al calendari: tu i qui t'ha compartit el seu
+export type CalendarPerson = { id: string; name: string; canEdit: boolean };
 
 export type Group = { id: string; name: string; invite_code: string; created_by: string };

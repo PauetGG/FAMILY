@@ -1,98 +1,119 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ChevronLeft, ChevronRight, Copy, Minus, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import Sheet from "@/components/Sheet";
+import MonthView from "@/components/calendar/MonthView";
+import WeekView from "@/components/calendar/WeekView";
+import DayView from "@/components/calendar/DayView";
+import DayPopup, { type DishLite } from "@/components/calendar/DayPopup";
 import { supabase } from "@/lib/supabase/client";
 import { useMe } from "@/components/UserProvider";
-import { addDays, DAY_LONG, DAY_SHORT, mondayOf, toKey, weekLabel } from "@/lib/dates";
-import { MEALS, type DietEntry, type Meal } from "@/lib/types";
+import { addDays, addMonths, dayLabel, monthGrid, monthLabel, mondayOf, toKey, weekLabel } from "@/lib/dates";
+import type { CalendarPerson, DietEntry, Meal } from "@/lib/types";
 
-type Owner = { id: string; name: string; canEdit: boolean };
-type DishLite = { id: string; name: string };
+type View = "month" | "week" | "day";
+
+const VIEWS: { key: View; label: string }[] = [
+  { key: "month", label: "Mes" },
+  { key: "week", label: "Setmana" },
+  { key: "day", label: "Dia" },
+];
+
+const ENTRY_SELECT =
+  "id, user_id, date, meal, dish_id, servings, dishes(id, name, dish_ingredients(quantity, ingredients(name, unit)))";
 
 export default function CalendarPage() {
   const { me } = useMe();
+  const [view, setView] = useState<View>("month");
   // La data d'avui es llegeix al navegador, no durant la generació de la pàgina
-  const [monday, setMonday] = useState<Date | null>(null);
-  const [dayIdx, setDayIdx] = useState(0);
+  const [cursor, setCursor] = useState<Date | null>(null);
   const [todayKey, setTodayKey] = useState("");
-  const [owners, setOwners] = useState<Owner[]>([]);
-  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [people, setPeople] = useState<CalendarPerson[]>([]);
   const [entries, setEntries] = useState<DietEntry[]>([]);
   const [dishes, setDishes] = useState<DishLite[]>([]);
-  const [picker, setPicker] = useState<{ date: string; meal: Meal } | null>(null);
+  const [popupDate, setPopupDate] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const now = new Date();
-    setMonday(mondayOf(now));
-    setDayIdx((now.getDay() + 6) % 7);
+    setCursor(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
     setTodayKey(toKey(now));
   }, []);
 
-  const days = useMemo(
-    () => (monday ? Array.from({ length: 7 }, (_, i) => addDays(monday, i)) : []),
-    [monday],
-  );
-  const owner = owners.find((o) => o.id === ownerId);
-  const canEdit = owner?.canEdit ?? false;
-
-  // Calendaris que puc veure: el meu i els que m'han compartit
+  // Qui surt al calendari: tu i tota la gent dels teus grups
   useEffect(() => {
     if (!me) return;
     (async () => {
       const sb = supabase();
-      const [{ data: shares }, { data: ds }] = await Promise.all([
+      const [{ data: members }, { data: shares }, { data: ds }] = await Promise.all([
+        sb.from("group_members").select("user_id, profiles(id, display_name)"),
         sb
           .from("diet_shares")
           .select("can_edit, owner:profiles!diet_shares_owner_id_fkey(id, display_name)")
           .eq("shared_with_id", me.id),
         sb.from("dishes").select("id, name").order("name"),
       ]);
-      const list: Owner[] = [{ id: me.id, name: "El meu", canEdit: true }];
-      (shares ?? []).forEach((s: { can_edit: boolean; owner: { id: string; display_name: string } | null }) => {
-        if (s.owner) list.push({ id: s.owner.id, name: s.owner.display_name, canEdit: s.can_edit });
+      const list = new Map<string, CalendarPerson>();
+      list.set(me.id, { id: me.id, name: me.display_name || "Tu", canEdit: true });
+      // Tota la gent dels meus grups (només per veure)...
+      ((members ?? []) as { user_id: string; profiles: { id: string; display_name: string } | null }[]).forEach((m) => {
+        if (m.profiles && !list.has(m.user_id)) {
+          list.set(m.user_id, { id: m.user_id, name: m.profiles.display_name || "Sense nom", canEdit: false });
+        }
       });
-      setOwners(list);
-      setOwnerId((cur) => cur ?? me.id);
+      // ...i qui m'ha donat permís, que a més puc editar
+      (shares ?? []).forEach((s: { can_edit: boolean; owner: { id: string; display_name: string } | null }) => {
+        if (!s.owner) return;
+        const cur = list.get(s.owner.id);
+        list.set(s.owner.id, {
+          id: s.owner.id,
+          name: cur?.name ?? (s.owner.display_name || "Sense nom"),
+          canEdit: (cur?.canEdit ?? false) || s.can_edit,
+        });
+      });
+      setPeople([...list.values()]);
       setDishes((ds as DishLite[]) ?? []);
     })();
   }, [me]);
 
+  // Dies que es veuen ara mateix
+  const range = useMemo(() => {
+    if (!cursor) return null;
+    if (view === "month") {
+      const g = monthGrid(cursor);
+      return { from: g[0], to: g[g.length - 1] };
+    }
+    if (view === "week") {
+      const m = mondayOf(cursor);
+      return { from: m, to: addDays(m, 6) };
+    }
+    return { from: cursor, to: cursor };
+  }, [cursor, view]);
+
   const loadEntries = useCallback(async () => {
-    if (!ownerId || !monday) return;
+    if (!range || people.length === 0) return;
     const { data } = await supabase()
       .from("diet_entries")
-      .select("id, user_id, date, meal, dish_id, servings, dishes(id, name)")
-      .eq("user_id", ownerId)
-      .gte("date", toKey(monday))
-      .lte("date", toKey(addDays(monday, 6)))
+      .select(ENTRY_SELECT)
+      .in(
+        "user_id",
+        people.map((p) => p.id),
+      )
+      .gte("date", toKey(range.from))
+      .lte("date", toKey(range.to))
       .order("created_at");
     setEntries((data as DietEntry[]) ?? []);
-  }, [ownerId, monday]);
+  }, [range, people]);
 
   useEffect(() => {
     loadEntries();
   }, [loadEntries]);
 
-  const byCell = useMemo(() => {
-    const m = new Map<string, DietEntry[]>();
-    entries.forEach((e) => {
-      const k = `${e.date}|${e.meal}`;
-      m.set(k, [...(m.get(k) ?? []), e]);
-    });
-    return m;
-  }, [entries]);
-
-  async function addEntry(dishId: string, servings: number) {
-    if (!picker || !ownerId) return;
+  async function addEntry(date: string, meal: Meal, userId: string, dishId: string, servings: number) {
     const { error } = await supabase()
       .from("diet_entries")
-      .insert({ user_id: ownerId, date: picker.date, meal: picker.meal, dish_id: dishId, servings });
-    setPicker(null);
+      .insert({ user_id: userId, date, meal, dish_id: dishId, servings });
     if (error) setMessage("No s'ha pogut afegir el plat.");
     await loadEntries();
   }
@@ -103,70 +124,82 @@ export default function CalendarPage() {
   }
 
   async function copyWeek() {
-    if (!ownerId || !monday) return;
+    if (!me || !cursor) return;
+    const monday = mondayOf(cursor);
     const next = addDays(monday, 7);
     const { data, error } = await supabase().rpc("copy_diet_week", {
       p_from: toKey(monday),
       p_to: toKey(next),
-      p_user_id: ownerId,
+      p_user_id: me.id,
     });
     if (error) return setMessage("No s'ha pogut copiar la setmana.");
-    setMessage(data ? `S'han copiat ${data} plats a la setmana vinent.` : "Aquesta setmana no té cap plat per copiar.");
-    if (data) setMonday(next);
+    setMessage(data ? `S'han copiat ${data} plats teus a la setmana vinent.` : "Aquesta setmana no tens cap plat per copiar.");
+    if (data) setCursor(next);
   }
 
-  function goWeek(delta: number) {
-    setMonday((m) => (m ? addDays(m, delta * 7) : m));
+  function move(delta: number) {
     setMessage(null);
+    setCursor((c) => {
+      if (!c) return c;
+      if (view === "month") return addMonths(c, delta);
+      if (view === "week") return addDays(c, delta * 7);
+      return addDays(c, delta);
+    });
   }
 
   function goToday() {
-    setMonday(mondayOf(new Date()));
-    setDayIdx((new Date().getDay() + 6) % 7);
+    const now = new Date();
+    setCursor(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
     setMessage(null);
   }
 
-  if (!monday) return <PageHeader title="Calendari" />;
+  if (!cursor) return <PageHeader title="Calendari" />;
+
+  const label =
+    view === "month" ? monthLabel(cursor) : view === "week" ? weekLabel(mondayOf(cursor)) : dayLabel(cursor);
+  const prevLabel = view === "month" ? "Mes anterior" : view === "week" ? "Setmana anterior" : "Dia anterior";
+  const nextLabel = view === "month" ? "Mes següent" : view === "week" ? "Setmana següent" : "Dia següent";
+
+  const dayActions = { people, entries, dishes, onAdd: addEntry, onRemove: removeEntry };
 
   return (
     <>
       <PageHeader
         title="Calendari"
         actions={
-          owners.length > 1 && (
-            <select
-              className="field w-auto font-bold"
-              aria-label="Calendari de"
-              value={ownerId ?? ""}
-              onChange={(e) => setOwnerId(e.target.value)}
-            >
-              {owners.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.id === me?.id ? "El meu calendari" : `Calendari de ${o.name}`}
-                </option>
-              ))}
-            </select>
-          )
+          <div className="inline-flex rounded-xl border-2 border-ink p-0.5" role="group" aria-label="Vista del calendari">
+            {VIEWS.map((v) => (
+              <button
+                key={v.key}
+                onClick={() => setView(v.key)}
+                aria-pressed={view === v.key}
+                className={`min-h-10 px-4 rounded-[9px] font-bold ${view === v.key ? "bg-ink text-paper" : "text-ink"}`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
         }
       />
 
-      {/* Barra de la setmana */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
         <div className="flex items-center">
-          <button className="btn btn-ghost" onClick={() => goWeek(-1)} aria-label="Setmana anterior">
+          <button className="btn btn-ghost" onClick={() => move(-1)} aria-label={prevLabel}>
             <ChevronLeft size={24} aria-hidden />
           </button>
-          <p className="font-display text-xl sm:text-2xl font-bold min-w-[10.5rem] text-center">{weekLabel(monday)}</p>
-          <button className="btn btn-ghost" onClick={() => goWeek(1)} aria-label="Setmana següent">
+          <p className="font-display text-xl sm:text-2xl font-bold min-w-[10.5rem] text-center" aria-live="polite">
+            {label}
+          </p>
+          <button className="btn btn-ghost" onClick={() => move(1)} aria-label={nextLabel}>
             <ChevronRight size={24} aria-hidden />
           </button>
         </div>
         <button className="btn btn-outline" onClick={goToday}>
           Avui
         </button>
-        {canEdit && (
+        {view === "week" && (
           <button className="btn btn-outline sm:ml-auto" onClick={copyWeek}>
-            <Copy size={18} aria-hidden /> Copia a la setmana vinent
+            <Copy size={18} aria-hidden /> Copia la meva setmana a la vinent
           </button>
         )}
       </div>
@@ -177,260 +210,21 @@ export default function CalendarPage() {
         </p>
       )}
 
-      {/* Mòbil i iPad vertical: un dia cada vegada */}
-      <div className="lg:hidden">
-        <div className="grid grid-cols-7 gap-1.5 mb-5" role="tablist" aria-label="Dies de la setmana">
-          {days.map((d, i) => {
-            const key = toKey(d);
-            const selected = i === dayIdx;
-            const count = entries.filter((e) => e.date === key).length;
-            return (
-              <button
-                key={key}
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setDayIdx(i)}
-                className={`flex flex-col items-center rounded-xl py-2 border-2 ${
-                  selected ? "bg-ink text-paper border-ink" : "bg-card border-line"
-                }`}
-              >
-                <span className="text-xs font-bold">{DAY_SHORT[i]}</span>
-                <span className={`font-display text-2xl font-extrabold leading-tight ${key === todayKey && !selected ? "text-brown underline underline-offset-4" : ""}`}>
-                  {d.getDate()}
-                </span>
-                <span
-                  className={`mt-0.5 h-1.5 w-1.5 rounded-full ${count ? (selected ? "bg-paper" : "bg-brown") : "bg-transparent"}`}
-                  aria-hidden
-                />
-              </button>
-            );
-          })}
-        </div>
+      {view === "month" && (
+        <MonthView cursor={cursor} todayKey={todayKey} people={people} entries={entries} onOpenDay={setPopupDate} />
+      )}
+      {view === "week" && (
+        <WeekView monday={mondayOf(cursor)} todayKey={todayKey} people={people} entries={entries} onOpenDay={setPopupDate} />
+      )}
+      {view === "day" && <DayView date={toKey(cursor)} {...dayActions} />}
 
-        <h2 className="text-3xl font-extrabold mb-3">
-          {DAY_LONG[dayIdx]} {days[dayIdx].getDate()}
-        </h2>
-        <div className="space-y-3">
-          {MEALS.map((m) => {
-            const key = toKey(days[dayIdx]);
-            return (
-              <section key={m.key} className="panel p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-xl font-bold">{m.label}</h3>
-                  {canEdit && (
-                    <button className="btn btn-ghost" onClick={() => setPicker({ date: key, meal: m.key })}>
-                      <Plus size={19} aria-hidden /> Afegeix
-                    </button>
-                  )}
-                </div>
-                <EntryList
-                  items={byCell.get(`${key}|${m.key}`) ?? []}
-                  canEdit={canEdit}
-                  onRemove={removeEntry}
-                  empty="Res planificat"
-                />
-              </section>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* iPad horitzontal i ordinador: tota la setmana */}
-      <div className="hidden lg:block">
-        <div className="grid grid-cols-[5.5rem_repeat(7,minmax(0,1fr))] gap-1.5">
-          <div />
-          {days.map((d, i) => {
-            const isToday = toKey(d) === todayKey;
-            return (
-              <div
-                key={toKey(d)}
-                className={`rounded-t-xl px-3 py-2 ${isToday ? "bg-brown text-card" : "bg-ink text-paper"}`}
-              >
-                <span className="block text-sm font-bold">{DAY_LONG[i]}</span>
-                <span className="block font-display text-4xl font-extrabold leading-none tracking-[-0.03em]">
-                  {d.getDate()}
-                </span>
-              </div>
-            );
-          })}
-
-          {MEALS.map((m) => (
-            <MealRow
-              key={m.key}
-              label={m.label}
-              days={days}
-              meal={m.key}
-              byCell={byCell}
-              canEdit={canEdit}
-              onAdd={(date) => setPicker({ date, meal: m.key })}
-              onRemove={removeEntry}
-            />
-          ))}
-        </div>
-      </div>
-
-      {!canEdit && owner && (
-        <p className="mt-6 text-ink/75">Pots veure aquest calendari, però només {owner.name} el pot modificar.</p>
+      {people.length === 1 && (
+        <p className="mt-6 text-ink/60">
+          Quan entri més gent al teu grup, també sortirà aquí.
+        </p>
       )}
 
-      <Sheet
-        open={picker !== null}
-        title={picker ? `${MEALS.find((m) => m.key === picker.meal)?.label}, ${DAY_LONG[(new Date(picker.date + "T00:00").getDay() + 6) % 7].toLowerCase()}` : ""}
-        onClose={() => setPicker(null)}
-      >
-        {picker && <DishPicker dishes={dishes} onPick={addEntry} />}
-      </Sheet>
+      <DayPopup date={popupDate} onClose={() => setPopupDate(null)} {...dayActions} />
     </>
-  );
-}
-
-function MealRow({
-  label,
-  days,
-  meal,
-  byCell,
-  canEdit,
-  onAdd,
-  onRemove,
-}: {
-  label: string;
-  days: Date[];
-  meal: Meal;
-  byCell: Map<string, DietEntry[]>;
-  canEdit: boolean;
-  onAdd: (date: string) => void;
-  onRemove: (id: string) => void;
-}) {
-  return (
-    <>
-      <div className="flex items-start pt-3 font-display text-lg font-bold">{label}</div>
-      {days.map((d) => {
-        const key = toKey(d);
-        const items = byCell.get(`${key}|${meal}`) ?? [];
-        return (
-          <div key={key} className="bg-card border-2 border-line rounded-lg p-2 min-h-28 flex flex-col">
-            <EntryList items={items} canEdit={canEdit} onRemove={onRemove} compact />
-            {canEdit && (
-              <button
-                onClick={() => onAdd(key)}
-                className="mt-auto self-start inline-flex items-center justify-center w-8 h-8 rounded-md text-brown hover:bg-brown hover:text-card"
-                aria-label={`Afegeix plat: ${label}, ${d.getDate()}`}
-                title="Afegeix un plat"
-              >
-                <Plus size={18} strokeWidth={2.5} aria-hidden />
-              </button>
-            )}
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
-function EntryList({
-  items,
-  canEdit,
-  onRemove,
-  empty,
-  compact,
-}: {
-  items: DietEntry[];
-  canEdit: boolean;
-  onRemove: (id: string) => void;
-  empty?: string;
-  compact?: boolean;
-}) {
-  if (items.length === 0) return empty ? <p className="mt-1 text-ink/60">{empty}</p> : null;
-  return (
-    <ul className={compact ? "space-y-1 mb-1" : "mt-2 space-y-2"}>
-      {items.map((e) => (
-        <li
-          key={e.id}
-          className={`flex items-start justify-between gap-1 rounded-md bg-paper border-l-4 border-brown ${
-            compact ? "pl-2 pr-0.5 py-1 text-sm" : "pl-3 pr-1 py-2"
-          }`}
-        >
-          <span className="font-bold leading-snug break-words min-w-0">
-            {e.dishes?.name ?? "Plat esborrat"}
-            {Number(e.servings) !== 1 && <span className="font-normal text-ink/70"> ×{Number(e.servings)}</span>}
-          </span>
-          {canEdit && (
-            <button
-              onClick={() => onRemove(e.id)}
-              className="shrink-0 rounded p-1 text-ink/60 hover:text-danger hover:bg-danger/10"
-              aria-label={`Treu ${e.dishes?.name ?? "el plat"}`}
-            >
-              <X size={compact ? 14 : 18} aria-hidden />
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function DishPicker({ dishes, onPick }: { dishes: DishLite[]; onPick: (id: string, servings: number) => void }) {
-  const [q, setQ] = useState("");
-  const [servings, setServings] = useState(1);
-  const filtered = dishes.filter((d) => d.name.toLowerCase().includes(q.trim().toLowerCase()));
-
-  if (dishes.length === 0) {
-    return (
-      <div>
-        <p>Encara no tens plats. Crea&apos;n un amb els seus ingredients i torna aquí.</p>
-        <Link href="/plats" className="btn btn-primary mt-4">
-          Ves a plats
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-bold">Racions</span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="btn btn-outline px-3"
-            onClick={() => setServings((s) => Math.max(0.5, s - 0.5))}
-            aria-label="Menys racions"
-          >
-            <Minus size={18} aria-hidden />
-          </button>
-          <span className="w-12 text-center font-display text-2xl font-bold" aria-live="polite">
-            {servings}
-          </span>
-          <button
-            type="button"
-            className="btn btn-outline px-3"
-            onClick={() => setServings((s) => s + 0.5)}
-            aria-label="Més racions"
-          >
-            <Plus size={18} aria-hidden />
-          </button>
-        </div>
-      </div>
-      <input
-        className="field"
-        placeholder="Busca un plat"
-        aria-label="Busca un plat"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
-      <ul className="max-h-[45dvh] overflow-y-auto divide-y-2 divide-line border-2 border-line rounded-xl">
-        {filtered.map((d) => (
-          <li key={d.id}>
-            <button
-              className="w-full text-left px-4 py-3 font-bold hover:bg-paper"
-              onClick={() => onPick(d.id, servings)}
-            >
-              {d.name}
-            </button>
-          </li>
-        ))}
-        {filtered.length === 0 && <li className="px-4 py-3 text-ink/70">Cap plat coincideix amb la cerca.</li>}
-      </ul>
-    </div>
   );
 }
